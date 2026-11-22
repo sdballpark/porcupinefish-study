@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Porcupinefish Study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,500;1,6..72,400;1,6..72,500&family=Figtree:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: a naturalist's field study, calm and curious.
+   IDEA: a page from a reef field journal with a live specimen on it.
+   PICTURE: a porcupinefish over sand, caustic light, god rays, sea grass.
+   COLOUR and TYPE: deep reef teal ground, sand, one coral accent; Newsreader for names and notes, Figtree for text.
+   LAYOUT: full-bleed scene, one journal card top-left, notes pinned to the fish; card drops to the bottom on phones. */
+:root{color-scheme:dark;--ink:#e9f4f1;--mute:#9cc3c0;--coral:#ff8a5c;--sand:#e2cf9f;--card:rgba(5,30,38,.72);--line:rgba(233,244,241,.16)}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0;height:100%;background:#04161d;color:var(--ink);font:15px/1.5 Figtree,system-ui,sans-serif;overflow:hidden}
+#stage{position:fixed;inset:0}#stage canvas{display:block}
+.labels{position:absolute;inset:0;pointer-events:none}
+.note{font:italic 500 14px/1.2 Newsreader,Georgia,serif;color:var(--ink);white-space:nowrap;padding:0 0 3px;border-bottom:1px solid rgba(255,138,92,.8);text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.note small{display:block;font:400 11.5px Figtree,sans-serif;font-style:normal;color:var(--mute)}
+.card{position:fixed;top:18px;left:18px;width:320px;background:var(--card);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;padding:18px 20px;z-index:2}
+.where{margin:0;color:var(--mute);font-size:13px}
+h1{margin:4px 0 0;font:500 34px/1.05 Newsreader,Georgia,serif;text-wrap:balance}
+.latin{margin:2px 0 10px;font:italic 400 17px Newsreader,Georgia,serif;color:var(--sand)}
+.lede{margin:0 0 14px;color:#cfe5e2;font-size:14.5px}
+.state{font:italic 500 20px Newsreader,Georgia,serif;color:var(--coral);margin-bottom:8px;min-height:26px}
+.mrow{display:flex;justify-content:space-between;font-size:13px;color:var(--mute)}.mrow b{color:var(--ink);font-weight:600}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.1);margin:5px 0 8px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--sand),var(--coral));border-radius:3px}
+.gulps{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--mute)}
+.gulps span{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--sand)}.gulps span.on{background:var(--sand)}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+button{font:600 14px Figtree,sans-serif;min-height:40px;padding:0 14px;border-radius:20px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--sand)}button.on{background:rgba(226,207,159,.16);border-color:var(--sand)}
+button.primary{background:var(--coral);border-color:var(--coral);color:#2a0f04}
+button:focus-visible{outline:2px solid var(--sand);outline-offset:2px}
+.hint{margin:10px 0 0;font-size:12.5px;color:var(--mute)}
+@media(max-width:640px){.card{top:auto;bottom:10px;left:10px;right:10px;width:auto;padding:14px 16px}.lede,.where{display:none}h1{font-size:26px}.note small{display:none}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="stage"></div>
+<aside class="card">
+  <p class="where">Field study · sand flat beside the reef, 4 m</p>
+  <h1>Long-spine porcupinefish</h1>
+  <p class="latin">Diodon holocanthus</p>
+  <p class="lede">It cruises on its dorsal and anal fins, hovers on its pectorals and steers with its tail. When threatened it gulps water into an elastic stomach, and the spines that lay flat against its skin stand straight out.</p>
+  <div class="state" id="state">Cruising</div>
+  <div class="mrow"><span>Body volume (model)</span><b id="vol">×1.0</b></div>
+  <div class="bar"><i id="volBar"></i></div>
+  <div class="gulps" id="gulps">Gulps</div>
+  <div class="btns"><button id="bPuff" class="primary">Startle it</button><button id="bAuto" class="on">Auto</button><button id="bNotes" class="on">Notes</button></div>
+  <p class="hint">Click the fish to startle it. Drag to look around, scroll to zoom.</p>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {CSS2DRenderer,CSS2DObject} from 'three/addons/renderers/CSS2DRenderer.js';
+import {mergeVertices} from 'three/addons/utils/BufferGeometryUtils.js';
+
+const $=id=>document.getElementById(id);
+const PI=Math.PI, V3=THREE.Vector3;
+const lerp=(a,b,k)=>a+(b-a)*k, clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const ease=x=>x<.5?2*x*x:1-((-2*x+2)**2)/2;
+const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
+let seed=7; const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+
+/* ---------- renderer, scene ---------- */
+const stage=$('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+stage.appendChild(renderer.domElement);
+const labelR=new CSS2DRenderer(); labelR.domElement.className='labels'; stage.appendChild(labelR.domElement);
+
+const scene=new THREE.Scene();
+const bgc=document.createElement('canvas'); bgc.width=2; bgc.height=256;
+{const x=bgc.getContext('2d'), g=x.createLinearGradient(0,0,0,256);
+ g.addColorStop(0,'#3aa6b4'); g.addColorStop(.42,'#0f4c5c'); g.addColorStop(1,'#03131a'); x.fillStyle=g; x.fillRect(0,0,2,256);}
+const bgTex=new THREE.CanvasTexture(bgc); bgTex.colorSpace=THREE.SRGBColorSpace; scene.background=bgTex;
+const FOG=0x0d4251; scene.fog=new THREE.FogExp2(FOG,.055);
+
+const camera=new THREE.PerspectiveCamera(42,1,.1,120); camera.position.set(4.6,1.4,5.6);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.minDistance=2.5; controls.maxDistance=14; controls.maxPolarAngle=PI*.56;
+
+scene.add(new THREE.HemisphereLight(0xa8ecff,0x2a3b2a,1.15));
+const sun=new THREE.DirectionalLight(0xfff0d2,2.3); sun.position.set(2,10,3); scene.add(sun);
+const fill=new THREE.DirectionalLight(0x5fc8e0,.7); fill.position.set(-5,1,-4); scene.add(fill);
+const U={uT:{value:0}};
+
+/* ---------- sea floor with caustics and the fish's shadow ---------- */
+const floorMat=new THREE.ShaderMaterial({
+  uniforms:{uT:U.uT,uInf:{value:0},uFish:{value:new V3()},uFog:{value:new V3(.051,.259,.318)}},
+  vertexShader:`varying vec3 vW;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
+  fragmentShader:`uniform float uT,uInf;uniform vec3 uFish,uFog;varying vec3 vW;
+  float cau(vec2 p,float t){float c=0.;for(int i=0;i<3;i++){float f=float(i);vec2 q=p*(1.1+f*.6)+vec2(t*(.25+f*.08),-t*(.18+f*.11));
+    q+=vec2(sin(q.y*1.7+t*.8),cos(q.x*1.3-t*.7))*.7;c+=pow(1.-abs(sin(q.x)*sin(q.y)),7.);}return c/3.;}
+  void main(){vec2 p=vW.xz;float rip=.5+.5*sin(p.x*2.2+sin(p.y*.9)*1.6);
+    vec3 s=mix(vec3(.62,.55,.40),vec3(.80,.72,.53),rip*.7);
+    s+=vec3(.45,.70,.75)*cau(p*.85,uT)*.6;
+    float d=length(p-uFish.xz),r=.6+.75*uInf,h=max(.5,uFish.y-vW.y);
+    s*=1.-.5*smoothstep(r,r*.15,d)/(1.+h*.25);
+    float fd=length(vW-cameraPosition);s=mix(s,uFog,1.-exp(-fd*.075));gl_FragColor=vec4(s,1.);}`
+});
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(90,90),floorMat); floor.rotation.x=-PI/2; floor.position.y=-2.4; scene.add(floor);
+
+/* ---------- god rays ---------- */
+const rayMat=new THREE.ShaderMaterial({uniforms:{uT:U.uT},transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,
+  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+  fragmentShader:`uniform float uT;varying vec2 vUv;void main(){float a=.075*vUv.y*vUv.y*(.55+.45*sin(vUv.x*18.85+uT*.4));gl_FragColor=vec4(.75,.95,1.,a);}`});
+const rays=[];
+for(let i=0;i<6;i++){const m=new THREE.Mesh(new THREE.CylinderGeometry(.5,1.8+rnd()*1.2,16,32,1,true),rayMat);
+  m.position.set((rnd()-.5)*14,5,(rnd()-.5)*10-2); m.rotation.z=.25+rnd()*.15; m.userData.ph=rnd()*6; scene.add(m); rays.push(m);}
+
+/* ---------- rocks, coral, sea grass ---------- */
+for(let k=0;k<10;k++){
+  const g=new THREE.IcosahedronGeometry(.35+rnd()*.9,2), p=g.attributes.position;
+  for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),n=1+.22*Math.sin(x*3.1+z*2.3)+.12*Math.sin(y*5.7);p.setXYZ(i,x*n,y*n*.7,z*n);}
+  g.computeVertexNormals();
+  const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(.1+rnd()*.05,.18,.28+rnd()*.12),roughness:.95,flatShading:true}));
+  const a=rnd()*PI*2, r=3.5+rnd()*7; m.position.set(Math.cos(a)*r,-2.4,Math.sin(a)*r-1); m.rotation.y=rnd()*6; scene.add(m);
+  if(k%3===0){for(let j=0;j<7;j++){const c=new THREE.Mesh(new THREE.SphereGeometry(.08+rnd()*.1,10,8),new THREE.MeshStandardMaterial({color:0xff8a5c,roughness:.6,emissive:0x401000,emissiveIntensity:.4}));
+    c.position.copy(m.position).add(new V3((rnd()-.5)*.7,.35+rnd()*.3,(rnd()-.5)*.7)); scene.add(c);}}
+}
+const grassGeo=new THREE.PlaneGeometry(.07,1.5,1,6).translate(0,.75,0);
+const grassMat=new THREE.MeshStandardMaterial({color:0x4f8a3c,roughness:.7,side:THREE.DoubleSide});
+grassMat.onBeforeCompile=s=>{s.uniforms.uT=U.uT; s.vertexShader='uniform float uT;\n'+s.vertexShader.replace('#include <begin_vertex>',
+  `#include <begin_vertex>
+  float hh=position.y; vec3 ip=vec3(instanceMatrix[3]);
+  transformed.x+=sin(uT*1.2+ip.x*.6+ip.z*.4)*.22*hh*hh; transformed.z+=cos(uT*.9+ip.z*.5)*.12*hh*hh;`);};
+const GN=320, grass=new THREE.InstancedMesh(grassGeo,grassMat,GN); const gm=new THREE.Matrix4(), gq=new THREE.Quaternion();
+for(let i=0;i<GN;i++){const cl=i%8, ca=cl*.8+1, cr=4+(cl%3)*2.5;
+  const p=new V3(Math.cos(ca)*cr+(rnd()-.5)*1.6,-2.4,Math.sin(ca)*cr-1+(rnd()-.5)*1.6);
+  gq.setFromEuler(new THREE.Euler((rnd()-.5)*.3,rnd()*PI,(rnd()-.5)*.3)); const s=.5+rnd()*.8;
+  gm.compose(p,gq,new V3(1,s,1)); grass.setMatrixAt(i,gm);}
+scene.add(grass);
+
+/* ---------- marine snow and bubbles ---------- */
+const dot=(()=>{const c=document.createElement('canvas');c.width=c.height=32;const x=c.getContext('2d'),g=x.createRadialGradient(16,16,0,16,16,16);
+  g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(0,0,32,32);return new THREE.CanvasTexture(c);})();
+const SN=700, sp=new Float32Array(SN*3); for(let i=0;i<SN;i++){sp[i*3]=(rnd()-.5)*24;sp[i*3+1]=-2.4+rnd()*8;sp[i*3+2]=(rnd()-.5)*24;}
+const snowGeo=new THREE.BufferGeometry(); snowGeo.setAttribute('position',new THREE.BufferAttribute(sp,3));
+scene.add(new THREE.Points(snowGeo,new THREE.PointsMaterial({size:.05,map:dot,transparent:true,depthWrite:false,opacity:.55,color:0xd8f4ff})));
+const BN=220, bp=new Float32Array(BN*3).fill(-99), bv=new Float32Array(BN*3), bl=new Float32Array(BN); let bNext=0, bAcc=0;
+const bubGeo=new THREE.BufferGeometry(); bubGeo.setAttribute('position',new THREE.BufferAttribute(bp,3));
+scene.add(new THREE.Points(bubGeo,new THREE.PointsMaterial({size:.09,map:dot,transparent:true,depthWrite:false,opacity:.85,color:0xe6fbff})));
+
+/* ---------- the fish ---------- */
+const fish=new THREE.Group(); scene.add(fish);
+const pivot=new THREE.Group(); fish.add(pivot);
+const S=new V3(), N=new V3();
+// one shape function drives body, spines, eyes, fins and mouth: x is forward
+function shape(dx,dy,dz,inf,sway){
+  const tap=dx>=0?1-.3*dx*dx:1-.62*dx*dx;
+  const fx=dx*1.6-(dx<0?.2*dx*dx:0), fy=dy*.85*tap-(dy<0?.06:0)*(1-dx*dx), fz=dz*.78*tap;
+  const R=1.42, sx=dx*R, sy=dy*R*(dy<0?.95:1), sz=dz*R;
+  let x=lerp(fx,sx,inf), y=lerp(fy,sy,inf), z=lerp(fz,sz,inf);
+  const tw=Math.min(0,x+.2); z+=sway*tw*tw;
+  S.set(x,y,z);
+  const a=lerp(1.6,R,inf), b=lerp(.85*tap,R,inf)||.01, c=lerp(.78*tap,R,inf)||.01;
+  N.set(dx/a,dy/b,dz/c).normalize(); return S;
+}
+let g0=new THREE.SphereGeometry(1,80,56); g0.deleteAttribute('normal'); g0.deleteAttribute('uv');
+const bodyGeo=mergeVertices(g0); const BP=bodyGeo.attributes.position, VC=BP.count;
+const base=new Float32Array(VC*3); for(let i=0;i<VC;i++){const v=new V3(BP.getX(i),BP.getY(i),BP.getZ(i)).normalize();base[i*3]=v.x;base[i*3+1]=v.y;base[i*3+2]=v.z;}
+// colours: tan back with dark blotches, pale belly, dark bar through the eye
+const spots=[]; for(let i=0;i<46;i++){const v=new V3(rnd()*2-1,rnd()*.9+.05,rnd()*2-1).normalize(); spots.push([v,.1+rnd()*.12]);}
+const col=new Float32Array(VC*3), cTan=new THREE.Color(0xb39462), cDark=new THREE.Color(0x4a3a24), cBelly=new THREE.Color(0xf1ead8), tc=new THREE.Color();
+for(let i=0;i<VC;i++){const d=new V3(base[i*3],base[i*3+1],base[i*3+2]);
+  tc.copy(cTan).lerp(cBelly,smooth(.05,-.35,d.y));
+  for(const [v,r] of spots){if(d.y>-.05&&d.angleTo(v)<r){tc.lerp(cDark,.85);break;}}
+  if(d.x>.35&&d.x<.6&&d.y>-.1)tc.lerp(cDark,.55);
+  tc.offsetHSL(0,0,(Math.sin(d.x*23+d.z*17)*.5)*.03);
+  col[i*3]=tc.r;col[i*3+1]=tc.g;col[i*3+2]=tc.b;}
+bodyGeo.setAttribute('color',new THREE.BufferAttribute(col,3));
+const body=new THREE.Mesh(bodyGeo,new THREE.MeshPhysicalMaterial({vertexColors:true,roughness:.5,clearcoat:.55,clearcoatRoughness:.35,sheen:.4,sheenColor:new THREE.Color(0xffe8c0)}));
+pivot.add(body);
+
+// spines: lie flat pointing back, stand up along the surface normal when inflated
+const spDirs=[]; const SPN=300;
+for(let i=0;i<SPN*2&&spDirs.length<SPN;i++){const y=1-2*(i+.5)/(SPN*2), r=Math.sqrt(1-y*y), th=i*2.39996;
+  const d=new V3(Math.cos(th)*r,y,Math.sin(th)*r); if(d.x>.82||d.x<-.78)continue; if(d.x>.38&&Math.abs(d.z)>.55&&d.y>.1)continue; spDirs.push([d,.75+rnd()*.5]);}
+const spineGeo=new THREE.ConeGeometry(.022,.3,5).translate(0,.15,0);
+const spines=new THREE.InstancedMesh(spineGeo,new THREE.MeshStandardMaterial({color:0xf3ead2,roughness:.45}),spDirs.length); pivot.add(spines);
+const sm=new THREE.Matrix4(), sq=new THREE.Quaternion(), UP=new V3(0,1,0), tb=new V3(), dir=new V3(), ss=new V3();
+
+// eyes: big, gold iris, the porcupinefish's signature
+const eyes=[]; for(const s of [1,-1]){const e=new THREE.Group();
+  e.add(new THREE.Mesh(new THREE.SphereGeometry(.2,24,16),new THREE.MeshStandardMaterial({color:0xd4b24c,roughness:.25,metalness:.2})));
+  const pu=new THREE.Mesh(new THREE.SphereGeometry(.13,20,14),new THREE.MeshStandardMaterial({color:0x050505,roughness:.08})); pu.position.z=.1; e.add(pu);
+  const hl=new THREE.Mesh(new THREE.SphereGeometry(.03,10,8),new THREE.MeshBasicMaterial({color:0xffffff})); hl.position.set(.04,.05,.22); e.add(hl);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.21,.025,8,40),new THREE.MeshStandardMaterial({color:0x2e2416,roughness:.6})); ring.position.z=.03; e.add(ring);
+  e.userData.d=new V3(.62,.42,.66*s).normalize(); pivot.add(e); eyes.push(e);}
+
+// mouth: beak-like lips that open on each gulp
+const mouth=new THREE.Group(); pivot.add(mouth);
+const lips=new THREE.Mesh(new THREE.TorusGeometry(.12,.045,10,30).rotateY(PI/2),new THREE.MeshStandardMaterial({color:0xe7dcc0,roughness:.5})); mouth.add(lips);
+const maw=new THREE.Mesh(new THREE.CircleGeometry(.11,24).rotateY(PI/2),new THREE.MeshBasicMaterial({color:0x1a0806})); maw.position.x=-.01; mouth.add(maw);
+
+// fins: fan membranes deformed by travelling waves, the same idea as the octopus arms
+const finMat=new THREE.MeshStandardMaterial({vertexColors:true,transparent:true,opacity:.66,side:THREE.DoubleSide,roughness:.55,depthWrite:false});
+function fan(len,spread,nr=12,nl=8){
+  const P=[],C=[],I=[],B=[], cm=new THREE.Color(0xe9d7a6), cr=new THREE.Color(0x9a7a45);
+  for(let i=0;i<=nr;i++){const u=i/nr,a=-spread/2+spread*u;
+    for(let j=0;j<=nl;j++){const v=j/nl, r=len*v*(.82+.18*Math.sin(u*PI))*(1-.06*Math.abs(Math.sin(u*PI*nr/2)));
+      P.push(-r*Math.cos(a),r*Math.sin(a),0); B.push(u,v); const c=i%2?cm:cr; C.push(c.r,c.g,c.b);}}
+  for(let i=0;i<nr;i++)for(let j=0;j<nl;j++){const a=i*(nl+1)+j,b=a+nl+1;I.push(a,b,a+1,b,b+1,a+1);}
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(P,3)); g.setAttribute('color',new THREE.Float32BufferAttribute(C,3)); g.setIndex(I);
+  g.userData={p0:Float32Array.from(P),B}; return g;
+}
+function makeFin(len,spread,d,rot){const grp=new THREE.Group(), m=new THREE.Mesh(fan(len,spread),finMat); grp.add(m); grp.rotation.set(...rot); grp.userData={d:d.normalize(),m}; pivot.add(grp); return grp;}
+const fins={
+  dorsal:makeFin(.62,.5,new V3(-.6,.8,0),[0,0,-1.0]),
+  anal:makeFin(.62,.5,new V3(-.6,-.8,0),[0,0,1.0]),
+  caudal:makeFin(.75,.85,new V3(-1,0,0),[0,0,0]),
+  pecL:makeFin(.42,.7,new V3(.28,-.05,.96),[0,.75,0]),
+  pecR:makeFin(.42,.7,new V3(.28,-.05,-.96),[0,-.75,0])
+};
+function waveFin(grp,t,amp,freq,k,ph){const g=grp.userData.m.geometry, p=g.attributes.position.array, {p0,B}=g.userData;
+  for(let i=0,n=B.length/2;i<n;i++){const u=B[i*2],v=B[i*2+1]; p[i*3]=p0[i*3]; p[i*3+1]=p0[i*3+1]; p[i*3+2]=amp*(v**1.3)*Math.sin(t*freq-u*k+ph);}
+  g.attributes.position.needsUpdate=true; g.computeVertexNormals();}
+
+/* ---------- field notes ---------- */
+const notes=[];
+function note(html,parent,pos){const d=document.createElement('div'); d.className='note'; d.innerHTML=html; const o=new CSS2DObject(d); o.position.copy(pos); parent.add(o); notes.push(o); return o;}
+const spineAnchor=new THREE.Object3D(), gutAnchor=new THREE.Object3D(); pivot.add(spineAnchor,gutAnchor);
+note('Spines<small>modified scales, flat until it inflates</small>',spineAnchor,new V3(0,.35,0));
+note('Dorsal &amp; anal fins<small>main thrust, beating together</small>',fins.dorsal,new V3(-.3,.55,0));
+note('Pectoral fins<small>fine hovering and braking</small>',fins.pecL,new V3(-.2,-.25,.2));
+note('Tail<small>rudder; folded when cruising</small>',fins.caudal,new V3(-.75,-.15,0));
+note('Elastic stomach<small>fills with water, one gulp at a time</small>',gutAnchor,new V3(0,-.3,0));
+
+/* ---------- behaviour ---------- */
+const NG=6, GULP=.42; let st='cruise', stT=0, inf=0, gulps=0, mouthOpen=0, auto=true, autoT=8, showNotes=true;
+let s=0, yaw=0, sway=0;
+function puff(){if(st==='cruise'){st='gulp';stT=0;gulps=0;}}
+$('bPuff').addEventListener('click',puff);
+$('bAuto').addEventListener('click',e=>{auto=!auto;e.currentTarget.classList.toggle('on',auto);});
+$('bNotes').addEventListener('click',e=>{showNotes=!showNotes;e.currentTarget.classList.toggle('on',showNotes);notes.forEach(n=>n.visible=showNotes);});
+const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(); let down=null;
+renderer.domElement.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);
+renderer.domElement.addEventListener('pointerup',e=>{if(down&&Math.hypot(e.clientX-down[0],e.clientY-down[1])<6){const r=renderer.domElement.getBoundingClientRect();
+  ndc.set((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height)*2+1); ray.setFromCamera(ndc,camera); bodyGeo.computeBoundingSphere(); if(ray.intersectObject(body).length)puff();} down=null;});
+$('gulps').innerHTML='Gulps '+Array.from({length:NG},()=>'<span></span>').join('');
+const gulpEls=[...$('gulps').querySelectorAll('span')];
+
+function volume(){const p=BP.array, ix=bodyGeo.index.array; let v=0;
+  for(let i=0;i<ix.length;i+=3){const a=ix[i]*3,b=ix[i+1]*3,c=ix[i+2]*3;
+    v+=p[a]*(p[b+1]*p[c+2]-p[b+2]*p[c+1])-p[a+1]*(p[b]*p[c+2]-p[b+2]*p[c])+p[a+2]*(p[b]*p[c+1]-p[b+1]*p[c]);} return Math.abs(v)/6;}
+function updateBody(){for(let i=0;i<VC;i++){shape(base[i*3],base[i*3+1],base[i*3+2],inf,sway);BP.setXYZ(i,S.x,S.y,S.z);} BP.needsUpdate=true; bodyGeo.computeVertexNormals();}
+updateBody(); const restVol=volume();
+
+const path=t=>new V3(3.6*Math.sin(t*.5),.15+.55*Math.sin(t*.8),2.6*Math.sin(t*.35+1)-1);
+const ro=new ResizeObserver(()=>{const w=stage.clientWidth,h=stage.clientHeight; renderer.setSize(w,h); labelR.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();}); ro.observe(stage);
+controls.target.copy(path(0));
+
+const clock=new THREE.Clock(); let hud=0, vol=1;
+function frame(){
+  const dt=Math.min(clock.getDelta(),.05), t=clock.elapsedTime; U.uT.value=t;
+
+  // state machine: cruise -> gulp x6 -> puffed -> deflate -> cruise
+  stT+=dt;
+  if(st==='cruise'){inf=0; mouthOpen=lerp(mouthOpen,.08+.06*Math.sin(t*2.2),dt*4); if(auto&&(autoT-=dt)<0){autoT=14+rnd()*6;puff();}}
+  else if(st==='gulp'){const k=Math.min(NG,stT/GULP); gulps=Math.min(NG,Math.floor(k)); const f=k-gulps;
+    mouthOpen=gulps<NG?Math.sin(PI*Math.min(1,f*1.6)):0; inf=(gulps+(gulps<NG?smooth(.45,1,f):0))/NG;
+    if(stT>=NG*GULP){st='puffed';stT=0;inf=1;}}
+  else if(st==='puffed'){inf=1+.015*Math.sin(t*3); mouthOpen=lerp(mouthOpen,0,dt*6); if(stT>4.5){st='deflate';stT=0;}}
+  else if(st==='deflate'){const f=Math.min(1,stT/3); inf=1-ease(f); mouthOpen=.55; bAcc+=dt*70;
+    if(f>=1){st='cruise';stT=0;gulps=0;}}
+  const infC=clamp(inf,0,1);
+
+  // swimming: slows to a drift when inflated
+  s+=dt*(.32-.27*infC);
+  const P=path(s), v=path(s+.01).sub(P);
+  fish.position.lerp(P,1-Math.exp(-dt*3)); fish.position.y+=.08*Math.sin(t*1.6)*infC;
+  const want=Math.atan2(-v.z,v.x); let dy=want-yaw; dy=Math.atan2(Math.sin(dy),Math.cos(dy)); yaw+=dy*Math.min(1,dt*2.2);
+  fish.rotation.y=yaw; pivot.rotation.z=clamp(v.y*40,-.3,.3)*(1-infC)+.12*Math.sin(t*.7)*infC; pivot.rotation.x=.18*Math.sin(t*.5)*infC;
+  sway=.12*Math.sin(t*2.4)*(1-infC);
+  updateBody();
+
+  // spines
+  const e=ease(infC);
+  spDirs.forEach(([d,len],i)=>{shape(d.x,d.y,d.z,inf,sway);
+    tb.set(-1,0,0).addScaledVector(N,N.x); if(tb.lengthSq()<1e-4)tb.copy(N); tb.normalize();
+    dir.copy(tb).multiplyScalar(1-e).addScaledVector(N,e+.08).normalize();
+    sq.setFromUnitVectors(UP,dir); ss.set(1,lerp(.35,1,e)*len,1);
+    sm.compose(S.addScaledVector(N,-.015),sq,ss); spines.setMatrixAt(i,sm);});
+  spines.instanceMatrix.needsUpdate=true;
+
+  for(const eye of eyes){const d=eye.userData.d; shape(d.x,d.y,d.z,inf,sway); eye.position.copy(S).addScaledVector(N,-.06); eye.quaternion.setFromUnitVectors(new V3(0,0,1),N);}
+  shape(1,-.14,0,inf,sway); mouth.position.copy(S); lips.scale.set(1,.55+.9*mouthOpen,1+.15*mouthOpen); maw.scale.set(1,.3+.9*mouthOpen,1);
+  for(const k in fins){const f=fins[k], d=f.userData.d; shape(d.x,d.y,d.z,inf,sway); f.position.copy(S);}
+  shape(.1,.62,.78,inf,sway); spineAnchor.position.copy(S); shape(.2,-.85,.5,inf,sway); gutAnchor.position.copy(S);
+
+  // fin waves: thrust from dorsal + anal, hover on pectorals, tail mostly folded
+  const beat=lerp(8,13,infC);
+  waveFin(fins.dorsal,t,.16,beat,3.2,0); waveFin(fins.anal,t,.16,beat,3.2,PI);
+  waveFin(fins.pecL,t,.13,lerp(11,16,infC),2.5,0); waveFin(fins.pecR,t,.13,lerp(11,16,infC),2.5,1.2);
+  waveFin(fins.caudal,t,.08,4,2,0); fins.caudal.rotation.y=.28*Math.sin(t*2.4)*(1-infC)+.12*Math.sin(t*9)*infC;
+  fins.caudal.scale.set(1,lerp(.55,1,infC),1);
+
+  // bubbles out of the mouth while expelling water; marine snow drifts
+  if(bAcc>=1){const mw=mouth.getWorldPosition(new V3()), fw=new V3(1,0,0).applyQuaternion(fish.quaternion);
+    while(bAcc>=1){bAcc--; const k=bNext; bNext=(bNext+1)%BN; bp[k*3]=mw.x;bp[k*3+1]=mw.y;bp[k*3+2]=mw.z;
+      bv[k*3]=fw.x*1.6+(rnd()-.5)*.4; bv[k*3+1]=.3+rnd()*.5; bv[k*3+2]=fw.z*1.6+(rnd()-.5)*.4; bl[k]=2.5;}}
+  for(let k=0;k<BN;k++){if(bl[k]<=0)continue; bl[k]-=dt; if(bl[k]<=0){bp[k*3+1]=-99;continue;}
+    bv[k*3]*=.96; bv[k*3+2]*=.96; bv[k*3+1]+=dt*.9; bp[k*3]+=bv[k*3]*dt; bp[k*3+1]+=bv[k*3+1]*dt; bp[k*3+2]+=bv[k*3+2]*dt;}
+  bubGeo.attributes.position.needsUpdate=true;
+  for(let i=0;i<SN;i++){sp[i*3+1]-=dt*.05; sp[i*3]+=Math.sin(t*.3+i)*dt*.04; if(sp[i*3+1]<-2.4)sp[i*3+1]+=8;}
+  snowGeo.attributes.position.needsUpdate=true;
+  rays.forEach(r=>r.rotation.z=.28+.05*Math.sin(t*.15+r.userData.ph));
+  sun.intensity=2.2+.25*Math.sin(t*1.7)*Math.sin(t*.63);
+
+  floorMat.uniforms.uFish.value.copy(fish.position); floorMat.uniforms.uInf.value=infC;
+  const prev=controls.target.clone(); controls.target.lerp(fish.position,1-Math.exp(-dt*1.5)); camera.position.add(controls.target.clone().sub(prev));
+  controls.update(); renderer.render(scene,camera); labelR.render(scene,camera);
+
+  hud+=dt; if(hud>.2){hud=0; vol=volume()/restVol;
+    $('vol').textContent='×'+vol.toFixed(1); $('volBar').style.width=clamp((vol-1)/3,0,1)*100+'%';
+    gulpEls.forEach((el,i)=>el.classList.toggle('on',st==='puffed'||(st==='gulp'&&i<gulps)||(st==='deflate'&&i<Math.round(NG*inf))));
+    $('state').textContent=st==='cruise'?'Cruising':st==='gulp'?`Gulping water, ${Math.min(gulps+1,NG)} of ${NG}`:st==='puffed'?'Fully inflated, spines up':'Expelling water';}
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
